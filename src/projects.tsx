@@ -1,9 +1,11 @@
 import {
   Action,
   ActionPanel,
+  Clipboard,
   Color,
   Icon,
   List,
+  showHUD,
   showToast,
   Toast,
 } from "@raycast/api";
@@ -17,12 +19,19 @@ import { Project } from "./types";
 function ProjectTaskList({
   project,
   projects,
+  onTaskMutated,
 }: {
   project: Project;
   projects: Project[];
+  onTaskMutated?: () => void;
 }) {
   const { tasks, isLoading, revalidate } = useProjectTasks(project.id);
   const activeTasks = tasks.filter((t) => t.status === 0);
+
+  function handleRefresh() {
+    revalidate();
+    onTaskMutated?.();
+  }
 
   return (
     <List
@@ -48,7 +57,7 @@ function ProjectTaskList({
                   <TaskForm
                     projects={projects}
                     defaultProjectId={project.id}
-                    onSubmit={revalidate}
+                    onSubmit={handleRefresh}
                   />
                 }
               />
@@ -57,14 +66,12 @@ function ProjectTaskList({
         />
       )}
 
-      {/* No section wrapper here — navigationTitle already names the project,
-          and an inner section repeating the name adds visual noise. */}
       {activeTasks.map((task) => (
         <TaskListItem
           key={task.id}
           task={task}
           projects={projects}
-          onRefresh={revalidate}
+          onRefresh={handleRefresh}
         />
       ))}
     </List>
@@ -134,7 +141,11 @@ export default function ProjectsCommand() {
                   title="Open Project"
                   icon={Icon.ChevronRight}
                   target={
-                    <ProjectTaskList project={project} projects={projects} />
+                    <ProjectTaskList
+                      project={project}
+                      projects={projects}
+                      onTaskMutated={revalidateTasks}
+                    />
                   }
                 />
                 <ActionPanel.Section title="Create">
@@ -151,12 +162,21 @@ export default function ProjectsCommand() {
                     }
                   />
                 </ActionPanel.Section>
-                <ActionPanel.Section title="Open">
+                <ActionPanel.Section title="Copy & Open">
                   <Action.OpenInBrowser
                     title="Open in Ticktick"
                     icon={Icon.Globe}
                     url={`https://ticktick.com/webapp/#p/${project.id}`}
                     shortcut={{ modifiers: ["cmd"], key: "o" }}
+                  />
+                  <Action
+                    title="Copy Project Id"
+                    icon={Icon.Clipboard}
+                    shortcut={{ modifiers: ["cmd", "shift"], key: "i" }}
+                    onAction={async () => {
+                      await Clipboard.copy(project.id);
+                      await showHUD("Project ID copied");
+                    }}
                   />
                 </ActionPanel.Section>
               </ActionPanel>

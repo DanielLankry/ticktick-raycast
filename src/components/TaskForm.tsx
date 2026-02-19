@@ -22,6 +22,7 @@ interface TaskFormProps {
   task?: Task;
   projects: Project[];
   defaultProjectId?: string;
+  defaultDate?: Date;
   onSubmit?: () => void;
   isLoadingProjects?: boolean;
 }
@@ -30,6 +31,7 @@ export function TaskForm({
   task,
   projects,
   defaultProjectId,
+  defaultDate,
   onSubmit,
   isLoadingProjects,
 }: TaskFormProps) {
@@ -53,6 +55,7 @@ export function TaskForm({
     projectId: string;
     priority: string;
     dueDate: Date | null;
+    isAllDay: boolean;
     tags: string;
   }) {
     if (!validateTitle(values.title)) return;
@@ -63,29 +66,36 @@ export function TaskForm({
         ? values.dueDate.toISOString().replace(/\.\d{3}Z$/, "+0000")
         : undefined;
 
-      const taskData: Partial<Task> = {
+      const tags = values.tags
+        ? values.tags
+            .split(",")
+            .map((t) => t.trim())
+            .filter(Boolean)
+        : undefined;
+
+      const taskData: Record<string, unknown> = {
         title: values.title.trim(),
-        content: values.content?.trim() || undefined,
-        projectId: values.projectId || undefined,
         priority: parseInt(values.priority) || 0,
-        startDate: dueDateStr,
-        dueDate: dueDateStr,
-        isAllDay: dueDateStr ? true : undefined,
-        tags: values.tags
-          ? values.tags
-              .split(",")
-              .map((t) => t.trim())
-              .filter(Boolean)
-          : undefined,
       };
 
+      if (values.content?.trim()) taskData.content = values.content.trim();
+      if (values.projectId) taskData.projectId = values.projectId;
+      if (dueDateStr) {
+        taskData.dueDate = dueDateStr;
+        taskData.isAllDay = values.isAllDay;
+        if (!values.isAllDay) {
+          taskData.startDate = dueDateStr;
+        }
+      }
+      if (tags && tags.length > 0) taskData.tags = tags;
+
       if (isEditing) {
-        await updateTask(task.id, taskData);
+        await updateTask(task.id, taskData as Partial<Task>);
         await showHUD(`Updated: "${taskData.title}"`);
         onSubmit?.();
         pop();
       } else {
-        await createTask(taskData);
+        await createTask(taskData as Partial<Task>);
         await showHUD(`Added: "${taskData.title}"`);
         onSubmit?.();
         await popToRoot();
@@ -149,7 +159,16 @@ export function TaskForm({
       <Form.DatePicker
         id="dueDate"
         title="Due Date"
-        defaultValue={task?.dueDate ? new Date(task.dueDate) : undefined}
+        type={Form.DatePicker.Type.DateTime}
+        defaultValue={
+          task?.dueDate ? new Date(task.dueDate) : (defaultDate ?? undefined)
+        }
+      />
+      <Form.Checkbox
+        id="isAllDay"
+        label="All Day"
+        defaultValue={task?.isAllDay ?? true}
+        info="Uncheck to set a specific time for this task"
       />
       <Form.Dropdown
         id="priority"

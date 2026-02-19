@@ -10,7 +10,7 @@
 type ExtensionPreferences = {
   /** API Token - Your TickTick API access token */
   "apiToken": string,
-  /** Default Project ID - Project ID for Quick Add (find it in TickTick URL: ticktick.com/webapp/#p/{ID}). Leave empty for Inbox. */
+  /** Default Project ID - Default project for Quick Add Task. Use 'Copy Project ID' in the Projects command to find it. Leave empty for Inbox. */
   "defaultProject"?: string,
   /** Focus Duration (min) - Pomodoro focus session length */
   "pomodoroLength": "15" | "25" | "30" | "45" | "60",
@@ -26,8 +26,6 @@ declare type Preferences = ExtensionPreferences
 declare namespace Preferences {
   /** Preferences accessible in the `today` command */
   export type Today = ExtensionPreferences & {}
-  /** Preferences accessible in the `upcoming` command */
-  export type Upcoming = ExtensionPreferences & {}
   /** Preferences accessible in the `search-tasks` command */
   export type SearchTasks = ExtensionPreferences & {}
   /** Preferences accessible in the `projects` command */
@@ -38,15 +36,17 @@ declare namespace Preferences {
   export type AddTask = ExtensionPreferences & {}
   /** Preferences accessible in the `quick-add-task` command */
   export type QuickAddTask = ExtensionPreferences & {}
+  /** Preferences accessible in the `calendar` command */
+  export type Calendar = ExtensionPreferences & {}
   /** Preferences accessible in the `focus-timer` command */
   export type FocusTimer = ExtensionPreferences & {}
+  /** Preferences accessible in the `menu-bar` command */
+  export type MenuBar = ExtensionPreferences & {}
 }
 
 declare namespace Arguments {
   /** Arguments passed to the `today` command */
   export type Today = {}
-  /** Arguments passed to the `upcoming` command */
-  export type Upcoming = {}
   /** Arguments passed to the `search-tasks` command */
   export type SearchTasks = {}
   /** Arguments passed to the `projects` command */
@@ -64,7 +64,11 @@ declare namespace Arguments {
   /** Project name */
   "project": string
 }
+  /** Arguments passed to the `calendar` command */
+  export type Calendar = {}
   /** Arguments passed to the `focus-timer` command */
   export type FocusTimer = {}
+  /** Arguments passed to the `menu-bar` command */
+  export type MenuBar = {}
 }
 

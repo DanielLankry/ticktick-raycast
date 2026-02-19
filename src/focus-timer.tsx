@@ -1,7 +1,9 @@
 import {
   Action,
   ActionPanel,
+  Alert,
   Color,
+  confirmAlert,
   Detail,
   getPreferenceValues,
   Icon,
@@ -10,7 +12,9 @@ import {
   showHUD,
 } from "@raycast/api";
 import { useEffect, useState } from "react";
-import { FocusSession, Preferences } from "./types";
+import { useAllTasks } from "./hooks/useTasks";
+import { useProjects } from "./hooks/useProjects";
+import { FocusSession, Preferences, Task } from "./types";
 import { SESSION_CONFIG } from "./constants";
 
 const FOCUS_SESSION_KEY = "focus-session";
@@ -24,11 +28,13 @@ function formatTime(seconds: number): string {
 function TimerView({
   session,
   durations,
+  focusedTask,
   onComplete,
   onReset,
 }: {
   session: FocusSession;
   durations: Record<FocusSession["type"], number>;
+  focusedTask?: Task;
   onComplete: () => void;
   onReset: () => void;
 }) {
@@ -87,8 +93,8 @@ function TimerView({
 
   const markdown = [
     `# ${config.label}`,
+    ...(focusedTask ? [``, `**Working on:** ${focusedTask.title}`] : []),
     ``,
-    // Large code block makes the digits visually dominant and monospace-wide
     "```",
     `         ${formatTime(remaining)}`,
     "```",
@@ -111,6 +117,13 @@ function TimerView({
       markdown={markdown}
       metadata={
         <Detail.Metadata>
+          {focusedTask && (
+            <Detail.Metadata.Label
+              title="Focused Task"
+              text={focusedTask.title}
+              icon={{ source: Icon.Target, tintColor: Color.Orange }}
+            />
+          )}
           <Detail.Metadata.Label
             title="Session Type"
             text={config.label}
@@ -169,7 +182,17 @@ function TimerView({
             icon={Icon.Stop}
             style={Action.Style.Destructive}
             shortcut={{ modifiers: ["cmd", "shift"], key: "escape" }}
-            onAction={onReset}
+            onAction={async () => {
+              const confirmed = await confirmAlert({
+                title: "Stop Focus Session?",
+                message: `You have ${formatTime(remaining)} remaining. Stopping will reset the timer.`,
+                primaryAction: {
+                  title: "Stop Session",
+                  style: Alert.ActionStyle.Destructive,
+                },
+              });
+              if (confirmed) onReset();
+            }}
           />
         </ActionPanel>
       }
@@ -185,18 +208,35 @@ export default function FocusTimerCommand() {
     longBreak: parseInt(prefs.longBreakLength ?? "15"),
   };
 
+  const { tasks } = useAllTasks();
+  const { projects } = useProjects();
+  const activeTasks = tasks.filter((t) => t.status === 0);
+
   const [session, setSession] = useState<FocusSession | null>(null);
+  const [sessionsCompleted, setSessionsCompleted] = useState(0);
+  const [focusedTaskId, setFocusedTaskId] = useState<string | undefined>();
   const [loaded, setLoaded] = useState(false);
+
+  const focusedTask = focusedTaskId
+    ? activeTasks.find((t) => t.id === focusedTaskId)
+    : undefined;
 
   useEffect(() => {
     LocalStorage.getItem<string>(FOCUS_SESSION_KEY).then((raw) => {
       if (raw) {
         try {
-          const s: FocusSession = JSON.parse(raw);
+          const s = JSON.parse(raw) as FocusSession & {
+            _sessionsCompleted?: number;
+            _focusedTaskId?: string;
+          };
           const elapsed = Math.floor((Date.now() - s.startTime) / 1000);
           if (elapsed < s.duration * 60) {
             setSession(s);
+            setSessionsCompleted(s.sessionsCompleted);
+            if (s._focusedTaskId) setFocusedTaskId(s._focusedTaskId);
           } else {
+            setSessionsCompleted(s.sessionsCompleted);
+            if (s._focusedTaskId) setFocusedTaskId(s._focusedTaskId);
             LocalStorage.removeItem(FOCUS_SESSION_KEY);
           }
         } catch {
@@ -207,34 +247,39 @@ export default function FocusTimerCommand() {
     });
   }, []);
 
-  function startSession(type: FocusSession["type"], sessionsCompleted: number) {
+  function startSession(type: FocusSession["type"], count: number) {
     const s: FocusSession = {
       startTime: Date.now(),
       duration: durations[type],
       type,
-      sessionsCompleted,
+      sessionsCompleted: count,
     };
     setSession(s);
-    LocalStorage.setItem(FOCUS_SESSION_KEY, JSON.stringify(s));
+    setSessionsCompleted(count);
+    LocalStorage.setItem(
+      FOCUS_SESSION_KEY,
+      JSON.stringify({ ...s, _focusedTaskId: focusedTaskId }),
+    );
   }
 
   function handleSessionComplete() {
     if (!session) return;
-    if (session.type === "focus") {
-      const count = session.sessionsCompleted + 1;
-      startSession(count % 4 === 0 ? "longBreak" : "shortBreak", count);
-    } else {
-      startSession("focus", session.sessionsCompleted);
-    }
-  }
-
-  function resetTimer() {
+    const nextCount =
+      session.type === "focus"
+        ? session.sessionsCompleted + 1
+        : session.sessionsCompleted;
+    setSessionsCompleted(nextCount);
     setSession(null);
     LocalStorage.removeItem(FOCUS_SESSION_KEY);
   }
 
-  // Show the Detail skeleton while restoring from storage so there's no flash
-  // between List and Detail on open.
+  function resetTimer() {
+    setSession(null);
+    setSessionsCompleted(0);
+    setFocusedTaskId(undefined);
+    LocalStorage.removeItem(FOCUS_SESSION_KEY);
+  }
+
   if (!loaded) return <Detail isLoading markdown="" />;
 
   if (session) {
@@ -242,29 +287,93 @@ export default function FocusTimerCommand() {
       <TimerView
         session={session}
         durations={durations}
+        focusedTask={focusedTask}
         onComplete={handleSessionComplete}
         onReset={resetTimer}
       />
     );
   }
 
+  // Determine which session type to suggest next
+  const nextType: FocusSession["type"] =
+    sessionsCompleted > 0 && sessionsCompleted % 4 === 0
+      ? "longBreak"
+      : sessionsCompleted > 0
+        ? "shortBreak"
+        : "focus";
+
   const sessionTypes: Array<FocusSession["type"]> = [
     "focus",
     "shortBreak",
     "longBreak",
   ];
+  // Move recommended session to the top
+  const sortedTypes = [nextType, ...sessionTypes.filter((t) => t !== nextType)];
 
   return (
     <List navigationTitle="Focus Timer">
-      <List.Section title="Start a Session" subtitle="Choose your session type">
-        {sessionTypes.map((type) => {
+      {sessionsCompleted > 0 && (
+        <List.Section title="Progress">
+          <List.Item
+            title={`${sessionsCompleted} session${sessionsCompleted !== 1 ? "s" : ""} completed`}
+            icon={{ source: Icon.Trophy, tintColor: Color.Yellow }}
+            subtitle={
+              Math.floor(sessionsCompleted / 4) > 0
+                ? `${Math.floor(sessionsCompleted / 4)} full cycle${Math.floor(sessionsCompleted / 4) !== 1 ? "s" : ""}`
+                : undefined
+            }
+            actions={
+              <ActionPanel>
+                <Action
+                  title="Reset Progress"
+                  icon={Icon.ArrowCounterClockwise}
+                  style={Action.Style.Destructive}
+                  onAction={resetTimer}
+                />
+              </ActionPanel>
+            }
+          />
+        </List.Section>
+      )}
+
+      {focusedTask && (
+        <List.Section title="Focused Task">
+          <List.Item
+            title={focusedTask.title}
+            icon={{ source: Icon.Target, tintColor: Color.Orange }}
+            subtitle={
+              projects.find((p) => p.id === focusedTask.projectId)?.name
+            }
+            actions={
+              <ActionPanel>
+                <Action
+                  title="Clear Focused Task"
+                  icon={Icon.Xmark}
+                  onAction={() => setFocusedTaskId(undefined)}
+                />
+              </ActionPanel>
+            }
+          />
+        </List.Section>
+      )}
+
+      <List.Section
+        title="Start a Session"
+        subtitle={
+          sessionsCompleted > 0
+            ? "Recommended session is first"
+            : "Choose your session type"
+        }
+      >
+        {sortedTypes.map((type) => {
           const config = SESSION_CONFIG[type];
           const duration = durations[type];
+          const isRecommended = type === nextType && sessionsCompleted > 0;
           return (
             <List.Item
               key={type}
               title={config.label}
-              subtitle={config.description}
+              subtitle={isRecommended ? "Up next" : config.description}
               icon={{ source: config.icon, tintColor: config.color }}
               accessories={[
                 {
@@ -280,7 +389,7 @@ export default function FocusTimerCommand() {
                   <Action
                     title={`Start ${config.label}`}
                     icon={{ source: config.icon, tintColor: config.color }}
-                    onAction={() => startSession(type, 0)}
+                    onAction={() => startSession(type, sessionsCompleted)}
                   />
                 </ActionPanel>
               }
@@ -288,6 +397,31 @@ export default function FocusTimerCommand() {
           );
         })}
       </List.Section>
+
+      {!focusedTask && activeTasks.length > 0 && (
+        <List.Section
+          title="Focus on a Task"
+          subtitle="Optional — select a task to work on"
+        >
+          {activeTasks.slice(0, 10).map((task) => (
+            <List.Item
+              key={task.id}
+              title={task.title}
+              icon={{ source: Icon.Circle, tintColor: Color.SecondaryText }}
+              subtitle={projects.find((p) => p.id === task.projectId)?.name}
+              actions={
+                <ActionPanel>
+                  <Action
+                    title="Set as Focused Task"
+                    icon={{ source: Icon.Target, tintColor: Color.Orange }}
+                    onAction={() => setFocusedTaskId(task.id)}
+                  />
+                </ActionPanel>
+              }
+            />
+          ))}
+        </List.Section>
+      )}
     </List>
   );
 }

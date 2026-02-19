@@ -55,9 +55,14 @@ export default function TodayCommand() {
     return due.getTime() < today.getTime();
   });
 
+  const undatedTasks = tasks.filter((t) => t.status === 0 && !t.dueDate);
+
   const isLoading = tasksLoading || projectsLoading;
   const isEmpty =
-    !isLoading && todayTasks.length === 0 && overdueTasks.length === 0;
+    !isLoading &&
+    todayTasks.length === 0 &&
+    overdueTasks.length === 0 &&
+    undatedTasks.length === 0;
 
   return (
     <List isLoading={isLoading} searchBarPlaceholder="Filter today's tasks...">
@@ -103,6 +108,22 @@ export default function TodayCommand() {
           subtitle={`${todayTasks.length} task${todayTasks.length !== 1 ? "s" : ""}`}
         >
           {todayTasks.map((task) => (
+            <TaskListItem
+              key={task.id}
+              task={task}
+              projects={projects}
+              onRefresh={revalidate}
+            />
+          ))}
+        </List.Section>
+      )}
+
+      {undatedTasks.length > 0 && (
+        <List.Section
+          title="No Due Date"
+          subtitle={`${undatedTasks.length} task${undatedTasks.length !== 1 ? "s" : ""}`}
+        >
+          {undatedTasks.map((task) => (
             <TaskListItem
               key={task.id}
               task={task}

@@ -14,6 +14,7 @@ import {
 import { completeTask, deleteTask, updateTask } from "../api";
 import { PRIORITY_COLORS, PRIORITY_ICONS, PRIORITY_LABELS } from "../constants";
 import { Project, Task } from "../types";
+import { TaskDetail } from "./TaskDetail";
 import { TaskForm } from "./TaskForm";
 
 interface TaskListItemProps {
@@ -43,6 +44,17 @@ function getDueDateInfo(
     return { label: "Today", overdue: false, isToday: true };
   if (taskDate.getTime() === tomorrow.getTime())
     return { label: "Tomorrow", overdue: false, isToday: false };
+
+  const diffDays = Math.round(
+    (taskDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
+  );
+  if (diffDays <= 7) {
+    return {
+      label: `in ${diffDays} day${diffDays !== 1 ? "s" : ""}`,
+      overdue: false,
+      isToday: false,
+    };
+  }
 
   return {
     label: new Date(dateStr).toLocaleDateString("en-US", {
@@ -139,8 +151,20 @@ export function TaskListItem({ task, projects, onRefresh }: TaskListItemProps) {
               task is intentional and distinct, so it has its own shortcut to avoid
               accidental completions. */}
           <Action.Push
+            title="View Details"
+            icon={Icon.Eye}
+            target={
+              <TaskDetail
+                task={task}
+                projects={projects}
+                onRefresh={onRefresh}
+              />
+            }
+          />
+          <Action.Push
             title="Edit Task"
             icon={Icon.Pencil}
+            shortcut={{ modifiers: ["cmd"], key: "e" }}
             target={
               <TaskForm task={task} projects={projects} onSubmit={onRefresh} />
             }
@@ -191,7 +215,59 @@ export function TaskListItem({ task, projects, onRefresh }: TaskListItemProps) {
             />
           </ActionPanel.Section>
 
-          <ActionPanel.Section title="Create">
+          <ActionPanel.Section title="Organise">
+            <ActionPanel.Submenu
+              title="Move to Project"
+              icon={Icon.ArrowRight}
+              shortcut={{ modifiers: ["cmd", "shift"], key: "m" }}
+            >
+              <Action
+                title="Inbox"
+                icon={Icon.Tray}
+                onAction={async () => {
+                  try {
+                    await updateTask(task.id, {
+                      projectId: "",
+                    });
+                    await showHUD(`Moved to Inbox`);
+                    onRefresh();
+                  } catch (err) {
+                    await showToast({
+                      style: Toast.Style.Failure,
+                      title: "Failed to move task",
+                      message: String(err),
+                    });
+                  }
+                }}
+              />
+              {projects
+                .filter((p) => p.id !== task.projectId)
+                .map((p) => (
+                  <Action
+                    key={p.id}
+                    title={p.name}
+                    icon={{
+                      source: Icon.Folder,
+                      tintColor: p.color ?? Color.SecondaryText,
+                    }}
+                    onAction={async () => {
+                      try {
+                        await updateTask(task.id, {
+                          projectId: p.id,
+                        });
+                        await showHUD(`Moved to ${p.name}`);
+                        onRefresh();
+                      } catch (err) {
+                        await showToast({
+                          style: Toast.Style.Failure,
+                          title: "Failed to move task",
+                          message: String(err),
+                        });
+                      }
+                    }}
+                  />
+                ))}
+            </ActionPanel.Submenu>
             <Action.Push
               title="New Task"
               icon={Icon.Plus}
