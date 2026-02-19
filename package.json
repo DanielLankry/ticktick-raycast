@@ -1,8 +1,8 @@
 {
   "$schema": "https://www.raycast.com/schemas/extension.json",
-  "name": "ticktick",
-  "title": "TickTick",
-  "description": "Manage your TickTick tasks, projects, and focus sessions directly from Raycast",
+  "name": "ticktick-windows",
+  "title": "TickTick for Windows",
+  "description": "Manage your TickTick tasks, projects, and focus sessions from Raycast — cross-platform via REST API",
   "icon": "extension-icon.png",
   "author": "daniel_lankry",
   "categories": [
